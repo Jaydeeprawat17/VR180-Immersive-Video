@@ -4,7 +4,10 @@ import "aframe";
 
 export default function Home() {
   const [videoURL, setVideoURL] = useState(null);
+  const [isRecording, setIsRecording] = useState(false);
   const videoRef = useRef(null);
+  const recorderRef = useRef(null);
+  const chunksRef = useRef([]);
 
   const handleFile = (e) => {
     const file = e.target.files?.[0];
@@ -14,12 +17,55 @@ export default function Home() {
     }
   };
 
-  const handleDownload = () => {
-    if (!videoURL) return;
+const startRecording = () => {
+  const canvas = document.querySelector("canvas"); // A-Frame canvas
+  const videoEl = videoRef.current;
+
+  if (!canvas || !videoEl) return alert("VR scene not loaded yet!");
+
+  // Capture video from canvas
+  const canvasStream = canvas.captureStream(30);
+
+  // Capture audio from video element
+  let audioStream;
+  if (videoEl.captureStream) {
+    audioStream = videoEl.captureStream();
+  } else if (videoEl.mozCaptureStream) {
+    audioStream = videoEl.mozCaptureStream();
+  }
+
+  // Merge canvas + audio tracks
+  const combinedStream = new MediaStream([
+    ...canvasStream.getVideoTracks(),
+    ...(audioStream ? audioStream.getAudioTracks() : []),
+  ]);
+
+  const recorder = new MediaRecorder(combinedStream, { mimeType: "video/webm" });
+
+  chunksRef.current = [];
+  recorder.ondataavailable = (e) => chunksRef.current.push(e.data);
+
+  recorder.onstop = () => {
+    const blob = new Blob(chunksRef.current, { type: "video/webm" });
+    const url = URL.createObjectURL(blob);
+
     const a = document.createElement("a");
-    a.href = videoURL;
-    a.download = "vr180-video.mp4";
+    a.href = url;
+    a.download = "vr180-output.webm"; // VR video + audio
     a.click();
+
+    setIsRecording(false);
+  };
+
+  recorder.start();
+  recorderRef.current = recorder;
+  setIsRecording(true);
+};
+
+  const stopRecording = () => {
+    if (recorderRef.current && recorderRef.current.state !== "inactive") {
+      recorderRef.current.stop();
+    }
   };
 
   const handleExit = () => {
@@ -28,6 +74,7 @@ export default function Home() {
       videoRef.current.pause();
       videoRef.current.src = "";
     }
+    stopRecording();
   };
 
   const handleResetView = () => {
@@ -48,7 +95,9 @@ export default function Home() {
 
           {/* Upload */}
           <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition">
-            <span className="text-gray-600 font-medium">Click or drag video file here</span>
+            <span className="text-gray-600 font-medium">
+              Click or drag video file here
+            </span>
             <input
               type="file"
               accept="video/*"
@@ -69,13 +118,26 @@ export default function Home() {
                 >
                   <MdRefresh size={22} />
                 </button>
-                <button
-                  onClick={handleDownload}
-                  className="p-2 rounded-full bg-green-600 text-white hover:bg-green-700 shadow-md transition"
-                  title="Download Video"
-                >
-                  <MdOutlineDownload size={22} />
-                </button>
+
+                {/* Record / Stop button */}
+                {!isRecording ? (
+                  <button
+                    onClick={startRecording}
+                    className="p-2 rounded-full bg-green-600 text-white hover:bg-green-700 shadow-md transition"
+                    title="Start Recording VR Video"
+                  >
+                    <MdOutlineDownload size={22} />
+                  </button>
+                ) : (
+                  <button
+                    onClick={stopRecording}
+                    className="p-2 rounded-full bg-yellow-600 text-white hover:bg-yellow-700 shadow-md transition animate-pulse"
+                    title="Stop Recording & Download"
+                  >
+                    ⏹
+                  </button>
+                )}
+
                 <button
                   onClick={handleExit}
                   className="p-2 rounded-full bg-red-600 text-white hover:bg-red-700 shadow-md transition"
